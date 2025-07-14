@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IMU 高效可视化与控制 + 3D 姿态立方体（修正旋转）</title>
+    <style>
+        body {
+            background: #f0f4f8;
+            color: #222;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            margin: 0;
+        }
+
+        button {
+            margin: 5px 8px 5px 0;
+            padding: 6px 14px;
+            font-size: 1em;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid #888;
+            background-color: #e0e7f1;
+            transition: background-color 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #c4d0f0;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        #status-container {
+            margin-top: 10px;
+            background: #e6eef7;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+
+        .status-label {
+            font-weight: bold;
+            margin-right: 20px;
+        }
+
+        .status-red {
+            color: #d32f2f;
+        }
+
+        .status-black {
+            color: #222;
+        }
+
+        .data-display-grid {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .value-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin: 0;
+        }
+
+        .value-item {
+            min-width: 160px;
+            /* 增加最小宽度以容纳更长的标签 */
+            background: white;
+            border-radius: 8px;
+            padding: 10px 12px;
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+            font-weight: 600;
+            text-align: center;
+            user-select: none;
+            color: #222;
+        }
+
+        .value-item span {
+            font-size: 1.3em;
+            color: #333;
+            margin-left: 6px;
+        }
+
+        canvas {
+            background: #fff;
+            border: 1px solid #ccc;
+            margin-top: 8px;
+            display: block;
+            border-radius: 6px;
+        }
+
+        .checkbox-group {
+            margin: 8px 0 16px 0;
+        }
+
+        .checkbox-group label {
+            margin-right: 16px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        #threeContainer {
+            width: 900px;
+            height: 300px;
+            background: #ffffff;
+            border: 1px solid #ccc;
+            margin-top: 20px;
+            border-radius: 6px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>IMU 高效可视化与控制 + 3D 姿态立方体（修正旋转）</h2>
+
+    <button id="btnConnect">连接</button>
+    <button id="btnDisconnect" disabled>断开</button>
+    <button id="btnRestartMCU" disabled>重启 MCU</button>
+    <div style="margin-top: 10px;">
+        <button onclick="sendCmd(0x01)">读 Offset</button>
+        <button onclick="sendCmd(0x02)">开始估计</button>
+        <button onclick="sendCmd(0x03)">停止估计</button>
+        <button onclick="sendCmd(0x04)">保存 Offset</button>
+    </div>
+
+    <div id="status-container">
+        <span id="statusConnect" class="status-label status-red">连接状态: 未连接</span>
+        <span id="statusCalibrate" class="status-label">校准状态: --</span>
+        <span id="statusStatic" class="status-label">静止状态: --</span>
+    </div>
+
+    <div class="data-display-grid">
+        <div class="value-row">
+            <div class="value-item">Roll: <span id="valRoll">--</span> °</div>
+            <div class="value-item">Pitch: <span id="valPitch">--</span> °</div>
+            <div class="value-item">Yaw: <span id="valYaw">--</span> °</div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">Gyro X: <span id="valGyrX">--</span> rad/s</div>
+            <div class="value-item">Gyro Y: <span id="valGyrY">--</span> rad/s</div>
+            <div class="value-item">Gyro Z: <span id="valGyrZ">--</span> rad/s</div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">Acc X: <span id="valAccX">--</span> m/s²</div>
+            <div class="value-item">Acc Y: <span id="valAccY">--</span> m/s²</div>
+            <div class="value-item">Acc Z: <span id="valAccZ">--</span> m/s²</div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">Quat W: <span id="valQuatW">--</span></div>
+            <div class="value-item">Quat X: <span id="valQuatX">--</span></div>
+            <div class="value-item">Quat Y: <span id="valQuatY">--</span></div>
+            <div class="value-item">Quat Z: <span id="valQuatZ">--</span></div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">Offset X: <span id="valOffX">--</span></div>
+            <div class="value-item">Offset Y: <span id="valOffY">--</span></div>
+            <div class="value-item">Offset Z: <span id="valOffZ">--</span></div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">温度: <span id="valTemp">--</span> °C</div>
+            <div class="value-item">气压: <span id="valPrs">--</span> Pa</div>
+            <div class="value-item">时间戳: <span id="valTs">--</span> ms</div>
+            <div class="value-item">Tag: <span id="valTag">--</span></div>
+        </div>
+    </div>
+
+
+    <h3>欧拉角（°）</h3>
+    <div class="checkbox-group" id="checkboxEuler">
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="0"> Roll</label>
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="1"> Pitch</label>
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="2"> Yaw</label>
+    </div>
+    <canvas id="chartEuler" width="900" height="200"></canvas>
+
+    <h3>角速度（rad/s）</h3>
+    <div class="checkbox-group" id="checkboxGyro">
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="0"> WX</label>
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="1"> WY</label>
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="2"> WZ</label>
+    </div>
+    <canvas id="chartGyro" width="900" height="200"></canvas>
+
+    <h3>加速度（m/s²）</h3>
+    <div class="checkbox-group" id="checkboxAcc">
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="0"> AX</label>
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="1"> AY</label>
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="2"> AZ</label>
+    </div>
+    <canvas id="chartAcc" width="900" height="200"></canvas>
+
+    <h3>3D 姿态立方体</h3>
+    <div id="threeContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+
+    <script>
+        const MAX_POINTS = 2000;
+        let latestData = null;
+        // All chart instances
+        const charts = {}; // 新增：一个对象来存储所有图表实例
+
+        // UI Elements (Existing)
+        const btnConnect = document.getElementById('btnConnect');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+        const btnRestartMCU = document.getElementById('btnRestartMCU');
+
+        // Status Elements (Existing)
+        const statusConnect = document.getElementById('statusConnect');
+        const statusCalibrate = document.getElementById('statusCalibrate');
+        const statusStatic = document.getElementById('statusStatic');
+
+        // Data Value Elements (Existing)
+        const valRoll = document.getElementById('valRoll');
+        const valPitch = document.getElementById('valPitch');
+        const valYaw = document.getElementById('valYaw');
+        const valGyrX = document.getElementById('valGyrX');
+        const valGyrY = document.getElementById('valGyrY');
+        const valGyrZ = document.getElementById('valGyrZ');
+        const valAccX = document.getElementById('valAccX');
+        const valAccY = document.getElementById('valAccY');
+        const valAccZ = document.getElementById('valAccZ');
+        const valQuatW = document.getElementById('valQuatW');
+        const valQuatX = document.getElementById('valQuatX');
+        const valQuatY = document.getElementById('valQuatY');
+        const valQuatZ = document.getElementById('valQuatZ');
+        const valOffX = document.getElementById('valOffX');
+        const valOffY = document.getElementById('valOffY');
+        const valOffZ = document.getElementById('valOffZ');
+        const valTemp = document.getElementById('valTemp');
+        const valPrs = document.getElementById('valPrs');
+        const valTs = document.getElementById('valTs');
+        const valTag = document.getElementById('valTag');
+
+        // Store all value elements in an array for easy reset
+        const allValueSpans = [
+            valRoll, valPitch, valYaw, valGyrX, valGyrY, valGyrZ,
+            valAccX, valAccY, valAccZ, valQuatW, valQuatX, valQuatY,
+            valQuatZ, valOffX, valOffY, valOffZ, valTemp, valPrs, valTs, valTag
+        ];
+
+        function createChart(ctx, labels, colors) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: labels.map((label, i) => ({
+                        label,
+                        data: [],
+                        borderColor: colors[i],
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        hidden: false,
+                        fill: false,
+                        tension: 0.15,
+                    })),
+                },
+                options: {
+                    animation: false,
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { display: false },
+                        y: { beginAtZero: false },
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { font: { size: 14 } }
+                        }
+                    },
+                },
+            });
+        }
+
+        charts.chartEuler = createChart(
+            document.getElementById('chartEuler').getContext('2d'),
+            ['Roll', 'Pitch', 'Yaw'],
+            ['#e53935', '#1e88e5', '#fbc02d']
+        );
+
+        charts.chartGyro = createChart(
+            document.getElementById('chartGyro').getContext('2d'),
+            ['WX', 'WY', 'WZ'],
+            ['#43a047', '#3949ab', '#fb8c00']
+        );
+
+        charts.chartAcc = createChart(
+            document.getElementById('chartAcc').getContext('2d'),
+            ['AX', 'AY', 'AZ'],
+            ['#ff6384', '#36a2eb', '#cc65fe']
+        );
+        // Serial port variables
+        let port = null, reader = null, writer = null, reading = false;
+        let readBuffer = [];
+
+        function parsePacket(buffer) {
+            for (let i = 0; i <= buffer.length - 82; i++) {
+                if (
+                    buffer[i] === 0x5a &&
+                    buffer[i + 1] === 0xa5 && // header (little-endian)
+                    buffer[i + 2] === 0x4c && // len low byte
+                    buffer[i + 3] === 0x00    // len high byte
+                ) {
+                    const pkt = buffer.slice(i, i + 82);
+                    const dv = new DataView(new Uint8Array(pkt).buffer);
+
+                    const data = {
+                        is_calibrate_gyro: dv.getUint8(7),
+                        is_static: dv.getUint8(8),
+                        temp: dv.getInt8(9),
+                        prs: dv.getFloat32(10, true),
+                        ts: dv.getUint32(14, true),
+                        acc: [
+                            dv.getFloat32(18, true), // acc[0]
+                            dv.getFloat32(22, true), // acc[1]
+                            dv.getFloat32(26, true)  // acc[2]
+                        ],
+                        gyr: [
+                            dv.getFloat32(30, true), // gyr[0]
+                            dv.getFloat32(34, true), // gyr[1]
+                            dv.getFloat32(38, true)  // gyr[2]
+                        ],
+                        offset: [
+                            dv.getFloat32(42, true), // offset[0]
+                            dv.getFloat32(46, true), // offset[1]
+                            dv.getFloat32(50, true)  // offset[2]
+                        ],
+                        eul: [ // Convert radians from MCU to degrees for display
+                            dv.getFloat32(54, true) * 180 / Math.PI, // eul[0] Roll
+                            dv.getFloat32(58, true) * 180 / Math.PI, // eul[1] Pitch
+                            dv.getFloat32(62, true) * 180 / Math.PI  // eul[2] Yaw
+                        ],
+                        quat: [
+                            dv.getFloat32(66, true), // quat[0] W
+                            dv.getFloat32(70, true), // quat[1] X
+                            dv.getFloat32(74, true), // quat[2] Y
+                            dv.getFloat32(78, true)  // quat[3] Z
+                        ],
+                        tag: dv.getUint8(6),
+                        length: 82 // Total packet length for slicing the buffer
+                    };
+                    return data;
+                }
+            }
+            return null;
+        }
+
+        function recordSample(data) {
+            latestData = data; // Keep latestData for UI and 3D model updates
+
+            const allCharts = Object.values(charts);
+            const newData = [data.eul, data.gyr, data.acc];
+
+            // Check if the buffer is full using the first chart's labels
+            const isBufferFull = allCharts[0].data.labels.length >= MAX_POINTS;
+
+            allCharts.forEach((chart, chartIndex) => {
+                if (isBufferFull) {
+                    chart.data.labels.shift();
+                    chart.data.datasets.forEach(dataset => {
+                        dataset.data.shift();
+                    });
+                }
+                chart.data.labels.push(data.ts); // Use timestamp as label
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    dataset.data.push(newData[chartIndex][datasetIndex]);
+                });
+            });
+        }
+
+        function updateValueDisplay(data) {
+            // Update status
+            if (data.is_calibrate_gyro) {
+                statusCalibrate.textContent = '校准状态: 正在校准';
+                statusCalibrate.className = 'status-label status-red';
+            } else {
+                statusCalibrate.textContent = '校准状态: 未在校准';
+                statusCalibrate.className = 'status-label status-black';
+            }
+
+            if (data.is_static) {
+                statusStatic.textContent = '静止状态: 静止';
+                statusStatic.className = 'status-label status-black';
+            } else {
+                statusStatic.textContent = '静止状态: 运动';
+                statusStatic.className = 'status-label status-red';
+            }
+
+            // Update data values
+            valRoll.textContent = data.eul[0].toFixed(2);
+            valPitch.textContent = data.eul[1].toFixed(2);
+            valYaw.textContent = data.eul[2].toFixed(2);
+
+            valGyrX.textContent = data.gyr[0].toFixed(3);
+            valGyrY.textContent = data.gyr[1].toFixed(3);
+            valGyrZ.textContent = data.gyr[2].toFixed(3);
+
+            valAccX.textContent = data.acc[0].toFixed(3);
+            valAccY.textContent = data.acc[1].toFixed(3);
+            valAccZ.textContent = data.acc[2].toFixed(3);
+
+            valQuatW.textContent = data.quat[0].toFixed(4);
+            valQuatX.textContent = data.quat[1].toFixed(4);
+            valQuatY.textContent = data.quat[2].toFixed(4);
+            valQuatZ.textContent = data.quat[3].toFixed(4);
+
+            valOffX.textContent = data.offset[0].toFixed(5);
+            valOffY.textContent = data.offset[1].toFixed(5);
+            valOffZ.textContent = data.offset[2].toFixed(5);
+
+            valTemp.textContent = data.temp.toFixed(0);
+            valPrs.textContent = data.prs.toFixed(2);
+            valTs.textContent = data.ts;
+            valTag.textContent = `0x${data.tag.toString(16).toUpperCase()}`;
+        }
+
+        // Max frame rate for general UI updates (text, 3D model)
+        let lastRender = 0;
+        const RENDER_INTERVAL_MS = 16; // ~60Hz
+
+        // Max frame rate for chart updates (can be slower)
+        let lastChartUpdate = 0;
+        const CHART_UPDATE_INTERVAL_MS = 30; // ~10Hz
+
+        function renderLoop(timestamp) {
+            if (!latestData) {
+                requestAnimationFrame(renderLoop);
+                return;
+            }
+
+            // Update UI text and 3D model at RENDER_INTERVAL_MS
+            if (timestamp - lastRender > RENDER_INTERVAL_MS) {
+                updateValueDisplay(latestData);
+                updateModelRotation(latestData.eul[0], latestData.eul[1], latestData.eul[2]);
+                lastRender = timestamp;
+            }
+
+            // Update charts at CHART_UPDATE_INTERVAL_MS
+            if (timestamp - lastChartUpdate > CHART_UPDATE_INTERVAL_MS) {
+                // 修改这里，通过 charts 对象访问
+                if (charts.chartEuler) charts.chartEuler.update('none');
+                if (charts.chartGyro) charts.chartGyro.update('none');
+                if (charts.chartAcc) charts.chartAcc.update('none');
+                lastChartUpdate = timestamp;
+            }
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        // Serial read loop (Existing, no changes needed here)
+        async function readLoop() {
+            try {
+                while (reading && reader) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        readBuffer.push(...value);
+                        if (readBuffer.length > MAX_POINTS * 82) {
+                            readBuffer.splice(0, readBuffer.length - MAX_POINTS * 82);
+                        }
+                        let pkt;
+                        while ((pkt = parsePacket(readBuffer)) !== null) {
+                            recordSample(pkt);
+                            readBuffer.splice(0, pkt.length);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('读取错误:', e);
+                await btnDisconnect.click();
+            }
+        }
+
+        // Send command (Existing, no changes needed here)
+        async function sendCmd(cmd) {
+            if (!writer) {
+                alert('未连接设备，无法发送命令');
+                return;
+            }
+            try {
+                const buf = new Uint8Array(16);
+                buf[0] = 0xAB;
+                buf[1] = cmd;
+                for (let i = 2; i < 16; i++) buf[i] = 0;
+                await writer.write(buf);
+            } catch (e) {
+                console.error('发送命令失败:', e);
+            }
+        }
+
+        function resetUiToDisconnected() {
+            statusConnect.textContent = '连接状态: 未连接';
+            statusConnect.className = 'status-label status-red';
+
+            statusCalibrate.textContent = '校准状态: --';
+            statusCalibrate.className = 'status-label';
+
+            statusStatic.textContent = '静止状态: --';
+            statusStatic.className = 'status-label';
+
+            allValueSpans.forEach(span => span.textContent = '--');
+
+            const allCharts = Object.values(charts); // 获取 charts 对象中所有图表实例的数组
+
+            allCharts.forEach(chart => {
+                if (chart) {
+                    chart.data.labels = [];
+                    chart.data.datasets.forEach(dataset => {
+                        dataset.data = [];
+                    });
+                    chart.update('none');
+                }
+            });
+
+            latestData = null;
+
+            btnConnect.disabled = false;
+            btnDisconnect.disabled = true;
+            btnRestartMCU.disabled = true;
+        }
+
+        // Event Listeners (Existing)
+        btnConnect.addEventListener('click', async () => {
+            if (!("serial" in navigator)) {
+                alert('浏览器不支持Web Serial API');
+                return;
+            }
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                reader = port.readable.getReader();
+                writer = port.writable.getWriter();
+                reading = true;
+                readBuffer = [];
+
+                readLoop();
+
+                statusConnect.textContent = '连接状态: 已连接';
+                statusConnect.className = 'status-label status-black';
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = false;
+                btnRestartMCU.disabled = false;
+            } catch (e) {
+                console.error(e);
+                alert('连接失败，请检查设备或权限');
+                resetUiToDisconnected();
+            }
+        });
+
+        btnDisconnect.addEventListener('click', async () => {
+            reading = false;
+            try {
+                if (reader) {
+                    await reader.cancel();
+                    reader.releaseLock();
+                    reader = null;
+                }
+                if (writer) {
+                    writer.releaseLock();
+                    writer = null;
+                }
+                if (port) {
+                    await port.close();
+                    port = null;
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                resetUiToDisconnected();
+            }
+        });
+
+        btnRestartMCU.addEventListener('click', async () => {
+            if (!writer) {
+                alert('未连接设备，无法发送重启指令');
+                return;
+            }
+            try {
+                const buf = new Uint8Array(16);
+                buf[0] = 0xAB;
+                buf[1] = 0x00;
+                for (let i = 2; i < 16; i++) buf[i] = 0;
+                await writer.write(buf);
+                await btnDisconnect.click();
+            } catch (e) {
+                console.error('发送重启命令失败:', e);
+            }
+        });
+
+        // Chart visibility checkboxes (Existing)
+        // 控制图表显示的复选框
+        document.querySelectorAll('.checkbox-group input[type=checkbox]').forEach(checkbox => {
+            checkbox.addEventListener('change', e => {
+                const chk = e.target;
+                const chartName = chk.dataset.chart; // 'chartEuler', 'chartGyro', 'chartAcc'
+                const dsIndex = Number(chk.dataset.index);
+
+                // 修改这里，从 `charts` 对象中获取图表实例
+                if (charts[chartName]) {
+                    charts[chartName].data.datasets[dsIndex].hidden = !chk.checked;
+                    charts[chartName].update('none');
+                }
+            });
+        });
+        // ---------- Three.js 3D 姿态模型（飞机） ----------
+
+        const threeContainer = document.getElementById('threeContainer');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, threeContainer.clientWidth / threeContainer.clientHeight, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(threeContainer.clientWidth, threeContainer.clientHeight);
+        renderer.setClearColor(0xffffff, 1);
+        threeContainer.appendChild(renderer.domElement);
+
+        const airplane = new THREE.Group();
+
+        const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, flatShading: true });
+        const wingMaterial = new THREE.MeshStandardMaterial({ color: 0x990000, flatShading: true });
+
+        // 1. Create Fuselage
+        const fuselageGeometry = new THREE.BoxGeometry(0.8, 1, 4); // Width, Height, Length
+        const fuselage = new THREE.Mesh(fuselageGeometry, bodyMaterial);
+        airplane.add(fuselage);
+
+        // 2. Create Wings
+        const wingGeometry = new THREE.BoxGeometry(5, 0.2, 1.5);
+        const wings = new THREE.Mesh(wingGeometry, wingMaterial);
+        wings.position.set(0, 0, -0.5); // Adjust wings position to be in the middle of the fuselage
+        airplane.add(wings);
+
+        // 3. Create Horizontal Stabilizer
+        const tailWingGeometry = new THREE.BoxGeometry(2.5, 0.15, 0.8);
+        const tailWings = new THREE.Mesh(tailWingGeometry, wingMaterial);
+        tailWings.position.set(0, 0.25, 1.8); // Adjusted to the rear of the fuselage
+        airplane.add(tailWings);
+
+        // 4. Create Vertical Stabilizer / Fin
+        const finGeometry = new THREE.BoxGeometry(0.15, 1, 0.8);
+        const fin = new THREE.Mesh(finGeometry, bodyMaterial);
+        fin.position.set(0, 0.7, 1.8);
+        airplane.add(fin);
+
+        scene.add(airplane);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        scene.add(directionalLight);
+
+        const axesHelper = new THREE.AxesHelper(2.5);
+        scene.add(axesHelper);
+
+        camera.position.set(5, 5, 8);
+        camera.lookAt(airplane.position);
+
+        /**
+         * Update the 3D model's rotation.
+         * @param {number} roll - Roll angle (degrees, around Z in this model's frame if length is Z)
+         * @param {number} pitch - Pitch angle (degrees, around X in this model's frame if length is Z)
+         * @param {number} yaw - Yaw angle (degrees, around Y in this model's frame if length is Z)
+         */
+        function updateModelRotation(roll, pitch, yaw) {
+            const rollRad = THREE.MathUtils.degToRad(roll);
+            const pitchRad = THREE.MathUtils.degToRad(pitch);
+            const yawRad = THREE.MathUtils.degToRad(yaw);
+
+            // This order YXZ means: first apply Yaw around Y, then Pitch around X, then Roll around Z.
+            // This generally aligns with the common interpretation of Roll/Pitch/Yaw for an aircraft
+            // where:
+            // - Roll is rotation about the longitudinal axis (airplane's forward axis, which is Z here)
+            // - Pitch is rotation about the lateral axis (airplane's wing axis, which is X here)
+            // - Yaw is rotation about the normal axis (airplane's vertical axis, which is Y here)
+            const euler = new THREE.Euler(pitchRad, yawRad, rollRad, 'YXZ');
+            airplane.setRotationFromEuler(euler);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate(); // Start the Three.js rendering loop
+
+        // Start the main data rendering loop
+        requestAnimationFrame(renderLoop);
+
+    </script>
+
+</body>
+
+</html>
