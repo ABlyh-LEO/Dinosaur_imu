@@ -603,6 +603,11 @@
                 btnConnect.disabled = true;
                 btnDisconnect.disabled = false;
                 btnRestartMCU.disabled = false;
+                Object.values(charts).forEach(chart => {
+                    if (chart && chart.resetZoom) {
+                        chart.resetZoom(); // 重置缩放
+                    }
+                });
             } catch (e) {
                 console.error(e);
                 alert('连接失败，请检查设备或权限');
