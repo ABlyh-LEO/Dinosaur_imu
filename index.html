@@ -52,7 +52,7 @@
         }
 
         .status-black {
-            color: #222;
+            color: #27a527;
         }
 
         .data-display-grid {
@@ -119,7 +119,6 @@
 </head>
 
 <body>
-
     <h2>Dinosaur_imu</h2>
 
     <button id="btnConnect">连接</button>
@@ -139,11 +138,10 @@
     </div>
 
     <div class="data-display-grid">
-
         <div class="value-row">
             <div class="value-item">时间戳: <span id="valTs">--</span> ms</div>
         </div>
-        
+
         <div class="value-row">
             <div class="value-item">Roll: <span id="valRoll">--</span> °</div>
             <div class="value-item">Pitch: <span id="valPitch">--</span> °</div>
@@ -177,7 +175,6 @@
         </div>
     </div>
 
-
     <h3>欧拉角（°）</h3>
     <div class="checkbox-group" id="checkboxEuler">
         <label><input type="checkbox" checked data-chart="chartEuler" data-index="0"> Roll</label>
@@ -202,17 +199,20 @@
     </div>
     <canvas id="chartAcc" width="900" height="200"></canvas>
 
-    <h3>3D 姿态立方体</h3>
+    <h3>姿态小飞机</h3>
     <div id="threeContainer"></div>
 
+    <!-- 添加缩放插件 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
     <script>
         const MAX_POINTS = 2000;
         let latestData = null;
         // All chart instances
-        const charts = {}; // 新增：一个对象来存储所有图表实例
+        const charts = {};
+        let isConnected = false;
 
         // UI Elements (Existing)
         const btnConnect = document.getElementById('btnConnect');
@@ -253,14 +253,23 @@
             valQuatZ, valOffX, valOffY, valOffZ, valTemp, valPrs, valTs, valTag
         ];
 
+        // 时间格式化函数：将毫秒数转换为 mm:ss.SSS 格式
+        function formatTime(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const milliseconds = ms % 1000;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+        }
+
         function createChart(ctx, labels, colors) {
             return new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: [],
+                    labels: [], // 使用labels数组存储时间戳
                     datasets: labels.map((label, i) => ({
                         label,
-                        data: [],
+                        data: [], // 存储数值
                         borderColor: colors[i],
                         borderWidth: 1.5,
                         pointRadius: 0,
@@ -274,10 +283,54 @@
                     responsive: false,
                     maintainAspectRatio: false,
                     scales: {
-                        x: { display: false },
-                        y: { beginAtZero: false },
+                        x: {
+                            display: true,
+                            ticks: {
+                                callback: function (value, index, values) {
+                                    // 使用labels数组中的时间戳
+                                    return formatTime(this.chart.data.labels[index]);
+                                },
+                                autoSkip: true,
+                                maxTicksLimit: 10,
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            title: {
+                                display: true,
+                                text: '时间 (mm:ss.SSS)',
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: labels[0].includes('°') ? '角度 (°)' :
+                                    labels[0].includes('rad') ? '角速度 (rad/s)' : '加速度 (m/s²)',
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
                     },
                     plugins: {
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x',
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x',
+                            }
+                        },
                         legend: {
                             display: true,
                             labels: { font: { size: 14 } }
@@ -289,21 +342,22 @@
 
         charts.chartEuler = createChart(
             document.getElementById('chartEuler').getContext('2d'),
-            ['Roll', 'Pitch', 'Yaw'],
+            ['Roll(°)', 'Pitch(°)', 'Yaw(°)'],
             ['#e53935', '#1e88e5', '#fbc02d']
         );
 
         charts.chartGyro = createChart(
             document.getElementById('chartGyro').getContext('2d'),
-            ['WX', 'WY', 'WZ'],
+            ['WX(rad/s)', 'WY(rad/s)', 'WZ(rad/s)'],
             ['#43a047', '#3949ab', '#fb8c00']
         );
 
         charts.chartAcc = createChart(
             document.getElementById('chartAcc').getContext('2d'),
-            ['AX', 'AY', 'AZ'],
+            ['AX(m/s²)', 'AY(m/s²)', 'AZ(m/s²)'],
             ['#ff6384', '#36a2eb', '#cc65fe']
         );
+
         // Serial port variables
         let port = null, reader = null, writer = null, reading = false;
         let readBuffer = [];
@@ -363,20 +417,26 @@
         function recordSample(data) {
             latestData = data; // Keep latestData for UI and 3D model updates
 
+            // 使用统一的处理方式处理所有图表
             const allCharts = Object.values(charts);
             const newData = [data.eul, data.gyr, data.acc];
 
-            // Check if the buffer is full using the first chart's labels
+            // 检查第一个图表的标签数是否超过最大值
             const isBufferFull = allCharts[0].data.labels.length >= MAX_POINTS;
 
             allCharts.forEach((chart, chartIndex) => {
                 if (isBufferFull) {
+                    // 移除最旧的数据点
                     chart.data.labels.shift();
                     chart.data.datasets.forEach(dataset => {
                         dataset.data.shift();
                     });
                 }
-                chart.data.labels.push(data.ts); // Use timestamp as label
+
+                // 添加新的时间戳到labels数组
+                chart.data.labels.push(data.ts);
+
+                // 添加新的数据点到每个数据集
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     dataset.data.push(newData[chartIndex][datasetIndex]);
                 });
@@ -514,18 +574,6 @@
             statusStatic.className = 'status-label';
 
             allValueSpans.forEach(span => span.textContent = '--');
-
-            const allCharts = Object.values(charts); // 获取 charts 对象中所有图表实例的数组
-
-            allCharts.forEach(chart => {
-                if (chart) {
-                    chart.data.labels = [];
-                    chart.data.datasets.forEach(dataset => {
-                        dataset.data = [];
-                    });
-                    chart.update('none');
-                }
-            });
 
             latestData = null;
 
@@ -700,7 +748,6 @@
         requestAnimationFrame(renderLoop);
 
     </script>
-
 </body>
 
 </html>
