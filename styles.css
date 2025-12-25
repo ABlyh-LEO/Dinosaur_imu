@@ -1,0 +1,145 @@
+body {
+    background: #f0f4f8;
+    color: #222;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    padding: 20px;
+    margin: 0;
+}
+
+h4 {
+    margin: 10px 0 5px 0;
+    color: #555;
+}
+
+button {
+    margin: 5px 8px 5px 0;
+    padding: 6px 14px;
+    font-size: 1em;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid #888;
+    background-color: #e0e7f1;
+    transition: background-color 0.2s;
+}
+
+button:hover:not(:disabled) {
+    background-color: #c4d0f0;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.control-panel {
+    margin: 10px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #e6eef7;
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+.input-group label {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.input-group input {
+    width: 100px;
+    padding: 4px 8px;
+    border: 1px solid #888;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+#status-container {
+    margin-top: 10px;
+    background: #e6eef7;
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.status-label {
+    font-weight: bold;
+    margin-right: 20px;
+}
+
+.status-red {
+    color: #d32f2f;
+}
+
+.status-black {
+    color: #27a527;
+}
+
+.data-display-grid {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.value-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+}
+
+.value-item {
+    min-width: 200px;
+    background: white;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+    text-align: center;
+    user-select: none;
+    color: #222;
+    font-size: 0.9em;
+}
+
+.value-item span {
+    font-size: 1.1em;
+    color: #333;
+    margin-left: 6px;
+    font-family: monospace;
+}
+
+canvas {
+    background: #fff;
+    border: 1px solid #ccc;
+    margin-top: 8px;
+    display: block;
+    border-radius: 6px;
+}
+
+.checkbox-group {
+    margin: 8px 0 16px 0;
+}
+
+.checkbox-group label {
+    margin-right: 16px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#threeContainer {
+    width: 900px;
+    height: 300px;
+    background: #ffffff;
+    border: 1px solid #ccc;
+    margin-top: 20px;
+    border-radius: 6px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}

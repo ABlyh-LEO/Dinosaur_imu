@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dinosaur_imu V2</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <h2>Dinosaur_imu V2</h2>
+
+    <div class="control-panel">
+        <button id="btnConnect">连接</button>
+        <button id="btnDisconnect" disabled>断开</button>
+        <button id="btnRestartMCU" disabled>重启 MCU</button>
+    </div>
+
+    <div class="control-panel">
+        <button onclick="sendCmd(0x01)">读 Offset</button>
+        <button onclick="sendCmd(0x02)">开始估计</button>
+        <button onclick="sendCmd(0x03)">停止估计</button>
+        <button onclick="sendCmd(0x04)">保存 Offset</button>
+    </div>
+
+    <div class="control-panel">
+        <button id="btnSendTimestamp">发送时间戳 (0x05)</button>
+        <div class="input-group">
+            <label for="triggerInterval">触发间隔 (1/8 ms):</label>
+            <input type="number" id="triggerInterval" value="8000" min="1" step="1">
+            <button id="btnSetTriggerInterval">设置触发间隔 (0x06)</button>
+        </div>
+    </div>
+
+    <div id="status-container">
+        <span id="statusConnect" class="status-label status-red">连接状态: 未连接</span>
+        <span id="statusCalibrate" class="status-label">校准状态: --</span>
+        <span id="statusStatic" class="status-label">静止状态: --</span>
+    </div>
+
+    <div class="data-display-grid">
+        <!-- 时间戳信息 -->
+        <h4>时间戳信息</h4>
+        <div class="value-row">
+            <div class="value-item">ts_1 (上位机发送): <span id="valTs1">--</span></div>
+            <div class="value-item">ts_2 (收到时本地): <span id="valTs2">--</span></div>
+            <div class="value-item">ts_3 (发送前本地): <span id="valTs3">--</span></div>
+        </div>
+        <div class="value-row">
+            <div class="value-item">ts_4 (上次触发前): <span id="valTs4">--</span></div>
+            <div class="value-item">ts_5 (IMU更新后): <span id="valTs5">--</span></div>
+        </div>
+
+        <!-- 基本信息 -->
+        <h4>基本信息</h4>
+        <div class="value-row">
+            <div class="value-item">温度: <span id="valTemp">--</span> °C</div>
+            <div class="value-item">Tag: <span id="valTag">--</span></div>
+        </div>
+
+        <!-- 欧拉角 -->
+        <h4>欧拉角</h4>
+        <div class="value-row">
+            <div class="value-item">Roll: <span id="valRoll">--</span> °</div>
+            <div class="value-item">Pitch: <span id="valPitch">--</span> °</div>
+            <div class="value-item">Yaw: <span id="valYaw">--</span> °</div>
+        </div>
+
+        <!-- 角速度 -->
+        <h4>角速度</h4>
+        <div class="value-row">
+            <div class="value-item">Gyro X: <span id="valGyrX">--</span> rad/s</div>
+            <div class="value-item">Gyro Y: <span id="valGyrY">--</span> rad/s</div>
+            <div class="value-item">Gyro Z: <span id="valGyrZ">--</span> rad/s</div>
+        </div>
+
+        <!-- 加速度 -->
+        <h4>加速度</h4>
+        <div class="value-row">
+            <div class="value-item">Acc X: <span id="valAccX">--</span> m/s²</div>
+            <div class="value-item">Acc Y: <span id="valAccY">--</span> m/s²</div>
+            <div class="value-item">Acc Z: <span id="valAccZ">--</span> m/s²</div>
+        </div>
+
+        <!-- 四元数 -->
+        <h4>四元数</h4>
+        <div class="value-row">
+            <div class="value-item">Quat W: <span id="valQuatW">--</span></div>
+            <div class="value-item">Quat X: <span id="valQuatX">--</span></div>
+            <div class="value-item">Quat Y: <span id="valQuatY">--</span></div>
+            <div class="value-item">Quat Z: <span id="valQuatZ">--</span></div>
+        </div>
+
+        <!-- Offset -->
+        <h4>Offset</h4>
+        <div class="value-row">
+            <div class="value-item">Offset X: <span id="valOffX">--</span></div>
+            <div class="value-item">Offset Y: <span id="valOffY">--</span></div>
+            <div class="value-item">Offset Z: <span id="valOffZ">--</span></div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <h3>欧拉角（°）</h3>
+    <div class="checkbox-group" id="checkboxEuler">
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="0"> Roll</label>
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="1"> Pitch</label>
+        <label><input type="checkbox" checked data-chart="chartEuler" data-index="2"> Yaw</label>
+    </div>
+    <canvas id="chartEuler" width="900" height="200"></canvas>
+
+    <h3>角速度（rad/s）</h3>
+    <div class="checkbox-group" id="checkboxGyro">
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="0"> WX</label>
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="1"> WY</label>
+        <label><input type="checkbox" checked data-chart="chartGyro" data-index="2"> WZ</label>
+    </div>
+    <canvas id="chartGyro" width="900" height="200"></canvas>
+
+    <h3>加速度（m/s²）</h3>
+    <div class="checkbox-group" id="checkboxAcc">
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="0"> AX</label>
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="1"> AY</label>
+        <label><input type="checkbox" checked data-chart="chartAcc" data-index="2"> AZ</label>
+    </div>
+    <canvas id="chartAcc" width="900" height="200"></canvas>
+
+    <h3>姿态小飞机</h3>
+    <div id="threeContainer"></div>
+
+    <!-- 外部依赖 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+
+    <!-- 本地模块 -->
+    <script src="protocol.js"></script>
+    <script src="charts.js"></script>
+    <script src="three-model.js"></script>
+    <script src="serial.js"></script>
+    <script src="main.js"></script>
+</body>
+
+</html>
