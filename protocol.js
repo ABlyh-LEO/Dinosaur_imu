@@ -72,7 +72,7 @@ const Protocol = {
      */
     parsePacket(buffer) {
         const PACKET_SIZE = this.PACKET_SIZE;
-        const LEN_FIELD_VALUE = 0x4C; // len 字段恒为 0x4C，不代表数据包长度
+        const LEN_FIELD_VALUE = this.PACKET_SIZE - 6;
 
         for (let i = 0; i <= buffer.length - PACKET_SIZE; i++) {
             // 检查 header (little-endian: 0x5A, 0xA5)
@@ -181,3 +181,4 @@ const Protocol = {
         return buf;
     }
 };
+
